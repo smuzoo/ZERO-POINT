@@ -6,7 +6,8 @@ export enum GameState {
   PHOTO_VIEW = 'PHOTO_VIEW',
   MINIGAME = 'MINIGAME',
   ENDING = 'ENDING',
-  DEATH = 'DEATH'
+  DEATH = 'DEATH',
+  PAUSED = 'PAUSED'
 }
 
 export type MiniGameType = 'TIMING' | 'SIMON';
@@ -23,6 +24,13 @@ export interface Anomaly {
   found: boolean;
   description: string;
   visualData: string;
+}
+
+export interface Rift {
+  id: number;
+  worldX: number;
+  worldY: number;
+  radius: number;
 }
 
 export interface LogEntry {

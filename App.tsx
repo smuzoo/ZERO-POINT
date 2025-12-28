@@ -1,19 +1,21 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { GameState, Coordinates, Anomaly, LogEntry, MiniGameType } from './types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { GameState, Coordinates, Anomaly, LogEntry, MiniGameType, Rift } from './types';
 import { getAnalysis } from './services/geminiService';
+import { audio } from './services/audioService';
 import { Terminal } from './components/Terminal';
 import { ViewPort } from './components/ViewPort';
 import { ControlPanel } from './components/ControlPanel';
 import { MiniGameOverlay } from './components/MiniGameOverlay';
-import { AlertCircle, Thermometer, Wind, Zap } from 'lucide-react';
+import { PauseMenu } from './components/PauseMenu';
+import { AlertCircle, Thermometer, Wind, Zap, Pause } from 'lucide-react';
 
 const GRID_SIZE = 20;
 const INITIAL_OXYGEN = 100;
 const INITIAL_ENERGY = 100;
-const O2_DRAIN_BASE = 0.55; 
-const HEAT_INC_BASE = 0.15;
-const ENERGY_DRAIN_BASE = 0.08;
+const O2_DRAIN_BASE = 1.65; // SIGNIFICANTLY FASTER DRAIN
+const HEAT_INC_BASE = 0.22;
+const ENERGY_DRAIN_BASE = 0.35; // FASTER ENERGY DRAIN
 
 const ANOMALIES_LIST: Anomaly[] = [
   { id: '1', pos: { x: 5, y: 15 }, name: 'Structure Alpha', found: false, description: '', visualData: '' },
@@ -22,8 +24,19 @@ const ANOMALIES_LIST: Anomaly[] = [
   { id: 'FINAL', pos: { x: 10, y: 10 }, name: 'The Origin', found: false, description: '', visualData: '' },
 ];
 
+// Define Rifts far from anomalies (Anomaly list has 10:10 as final, others at 5:15, 14:4, 2:8)
+const RIFTS_LIST: Rift[] = [
+  { id: 1, worldX: 2, worldY: 2, radius: 2.5 },
+  { id: 2, worldX: 18, worldY: 18, radius: 3.0 },
+  { id: 3, worldX: 2, worldY: 15, radius: 1.8 },
+  { id: 4, worldX: 18, worldY: 5, radius: 2.2 },
+  { id: 5, worldX: 10, worldY: 16, radius: 2.0 },
+  { id: 6, worldX: 16, worldY: 10, radius: 2.0 },
+];
+
 export default function App() {
   const [gameState, setGameState] = useState<GameState>(GameState.LORE);
+  const [previousState, setPreviousState] = useState<GameState>(GameState.ACTIVE);
   const [pos, setPos] = useState({ x: 10, y: 10 });
   const [oxygen, setOxygen] = useState(INITIAL_OXYGEN);
   const [energy, setEnergy] = useState(INITIAL_ENERGY);
@@ -35,6 +48,7 @@ export default function App() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedData, setCapturedData] = useState<null | { name: string, desc: string }>(null);
   const [activeMiniGame, setActiveMiniGame] = useState<MiniGameType | null>(null);
+  const [volume, setVolume] = useState(0.5);
 
   const addLog = useCallback((message: string, source: LogEntry['source'] = 'SYSTEM') => {
     setLogs(prev => [...prev, { timestamp: new Date().toLocaleTimeString(), source, message }].slice(-15));
@@ -53,7 +67,12 @@ export default function App() {
     setCapturedData(null);
     setActiveMiniGame(null);
     setGameState(GameState.BOOT);
+    audio.startMusic();
   }, []);
+
+  useEffect(() => {
+    audio.setVolume(volume);
+  }, [volume]);
 
   useEffect(() => {
     if (gameState === GameState.LORE) {
@@ -61,6 +80,7 @@ export default function App() {
       return () => clearTimeout(timer);
     }
     if (gameState === GameState.BOOT) {
+      audio.startMusic();
       const timer = setTimeout(() => {
         setGameState(GameState.ACTIVE);
         addLog("THERMOS-4 SYSTEM INITIALIZED", "SYSTEM");
@@ -81,15 +101,23 @@ export default function App() {
     }
   }, [gameState]);
 
+  // Resource warnings
+  useEffect(() => {
+    if (oxygen < 20 || heat > 80 || energy < 20) {
+      audio.play('warning');
+    }
+  }, [oxygen, heat, energy]);
+
   useEffect(() => {
     if (gameState === GameState.ACTIVE) {
       const trigger = setInterval(() => {
-        if (Math.random() > 0.72 && !activeMiniGame) {
+        // More frequent minigames: 8 second check with 40% probability
+        if (Math.random() > 0.60 && !activeMiniGame) {
           const type: MiniGameType = Math.random() > 0.5 ? 'TIMING' : 'SIMON';
           setActiveMiniGame(type);
           setGameState(GameState.MINIGAME);
         }
-      }, 10000);
+      }, 8000);
       return () => clearInterval(trigger);
     }
   }, [gameState, activeMiniGame]);
@@ -97,12 +125,15 @@ export default function App() {
   useEffect(() => {
     if (gameState === GameState.ACTIVE || gameState === GameState.MINIGAME) {
       if (oxygen <= 0) {
+        audio.play('death');
         setDeathCause('ASPHYXIATION: O2 DEPLETED');
         setGameState(GameState.DEATH);
       } else if (energy <= 0) {
+        audio.play('death');
         setDeathCause('POWER LOSS: CORE EXHAUSTED');
         setGameState(GameState.DEATH);
       } else if (heat >= 100) {
+        audio.play('death');
         setDeathCause('CRITICAL OVERHEAT: HULL MELT');
         setGameState(GameState.DEATH);
       }
@@ -114,9 +145,11 @@ export default function App() {
     const newX = Math.min(Math.max(0, pos.x + dx), GRID_SIZE - 1);
     const newY = Math.min(Math.max(0, pos.y + dy), GRID_SIZE - 1);
     if (newX !== pos.x || newY !== pos.y) {
+      audio.play('move');
       setPos({ x: newX, y: newY });
-      setOxygen(prev => prev - 0.8); 
-      setHeat(prev => Math.max(20, prev - 3.0)); 
+      setOxygen(prev => prev - 2.8); // MOVEMENT DRAINS O2 EVEN FASTER
+      setEnergy(prev => prev - 1.5); // MOVEMENT DRAINS ENERGY
+      setHeat(prev => Math.max(20, prev - 4.5)); 
       addLog(`MOVE: [${newX}, ${newY}]`, "SYSTEM");
     }
   };
@@ -124,6 +157,7 @@ export default function App() {
   const handleCapture = async () => {
     if (isCapturing || gameState !== GameState.ACTIVE) return;
     setIsCapturing(true);
+    audio.play('capture');
     addLog("COLLAPSING FIELD...", "SYSTEM");
     
     const target = anomalies[currentTargetIdx];
@@ -140,8 +174,8 @@ export default function App() {
         setAnomalies(prev => prev.map((a, i) => i === currentTargetIdx ? { ...a, found: true } : a));
         setCurrentTargetIdx(prev => prev + 1);
         setGameState(GameState.PHOTO_VIEW);
-        setOxygen(prev => Math.min(100, prev + 50));
-        setEnergy(prev => Math.min(100, prev + 20));
+        setOxygen(prev => Math.min(100, prev + 40));
+        setEnergy(prev => Math.min(100, prev + 15));
       } else {
         addLog("SIGNAL LOST: TARGET MISALIGNED", "SYSTEM");
       }
@@ -152,15 +186,24 @@ export default function App() {
   const resolveMiniGame = (success: boolean) => {
     if (success) {
       if (activeMiniGame === 'SIMON') setHeat(prev => Math.max(20, prev - 30));
-      if (activeMiniGame === 'TIMING') setOxygen(prev => Math.min(100, prev + 30));
+      if (activeMiniGame === 'TIMING') setOxygen(prev => Math.min(100, prev + 25));
       addLog("OVERRIDE SUCCESSFUL", "SYSTEM");
     } else {
-      setOxygen(prev => Math.max(5, prev - 20));
-      setHeat(prev => Math.min(95, prev + 25));
+      setOxygen(prev => Math.max(5, prev - 25));
+      setHeat(prev => Math.min(95, prev + 30));
       addLog("OVERRIDE FAILED: RESOURCE LOSS", "SYSTEM");
     }
     setActiveMiniGame(null);
     setGameState(GameState.ACTIVE);
+  };
+
+  const togglePause = () => {
+    if (gameState === GameState.PAUSED) {
+      setGameState(previousState);
+    } else {
+      setPreviousState(gameState);
+      setGameState(GameState.PAUSED);
+    }
   };
 
   if (gameState === GameState.LORE) {
@@ -203,7 +246,8 @@ export default function App() {
             target={anomalies[currentTargetIdx].pos} 
             isCapturing={isCapturing} 
             setHeat={setHeat} 
-            setEnergy={setEnergy} 
+            setEnergy={setEnergy}
+            rifts={RIFTS_LIST}
           />
           
           <div className="absolute top-4 left-4 flex flex-col gap-2 z-10 text-xs font-bold">
@@ -217,6 +261,15 @@ export default function App() {
               <Zap size={14}/> {energy.toFixed(1)}%
             </div>
           </div>
+
+          <button 
+            onClick={togglePause}
+            className="absolute top-4 right-4 z-[110] p-2 bg-zinc-900 border border-zinc-800 text-zinc-600 hover:text-white hover:border-zinc-500 rounded-sm"
+          >
+            <Pause size={16} />
+          </button>
+
+          {gameState === GameState.PAUSED && <PauseMenu onResume={togglePause} volume={volume} setVolume={setVolume} />}
 
           {gameState === GameState.MINIGAME && <MiniGameOverlay type={activeMiniGame!} onComplete={resolveMiniGame} />}
 
@@ -239,7 +292,7 @@ export default function App() {
       </div>
 
       <div className="w-full lg:w-80 flex flex-col gap-4">
-        <ControlPanel move={move} onCapture={handleCapture} isCapturing={isCapturing} pos={pos} target={anomalies[currentTargetIdx].pos} disabled={gameState === GameState.MINIGAME || gameState === GameState.PHOTO_VIEW} />
+        <ControlPanel move={move} onCapture={handleCapture} isCapturing={isCapturing} pos={pos} target={anomalies[currentTargetIdx].pos} disabled={gameState === GameState.MINIGAME || gameState === GameState.PHOTO_VIEW || gameState === GameState.PAUSED} />
         <div className="flex-1 border-4 border-zinc-900 bg-zinc-950 p-4 space-y-4 text-xs">
           <h2 className="font-black border-b border-zinc-800 pb-2 uppercase text-zinc-600">Index Progress</h2>
           <div className="space-y-2">
@@ -312,7 +365,6 @@ function EndingSequence({ onReset }: { onReset: () => void }) {
       {step === 3 && (
         <div className="space-y-10 animate-in fade-in duration-2000 flex flex-col items-center w-full">
            <div className="relative w-full h-64 overflow-hidden border-y border-zinc-800 flex items-center justify-center">
-             {/* Simulating rows of capsules in ice */}
              <div className="flex gap-4 opacity-40 animate-pulse">
                 {[1,2,3,4,5,6,7,8].map(i => (
                   <div key={i} className="w-16 h-32 border border-zinc-700 bg-zinc-900 flex-shrink-0 flex items-end p-1">
