@@ -13,9 +13,29 @@ import { AlertCircle, Thermometer, Wind, Zap, Pause } from 'lucide-react';
 const GRID_SIZE = 20;
 const INITIAL_OXYGEN = 100;
 const INITIAL_ENERGY = 100;
-const O2_DRAIN_BASE = 1.65; // SIGNIFICANTLY FASTER DRAIN
+const O2_DRAIN_BASE = 1.35; // Slightly faster to find the 'sweet spot'
 const HEAT_INC_BASE = 0.22;
-const ENERGY_DRAIN_BASE = 0.35; // FASTER ENERGY DRAIN
+const ENERGY_DRAIN_BASE = 0.32;
+
+const CORPORATE_LORE = [
+  "REMINDER: Your consciousness is temporary. The Data is eternal.",
+  "PROJECT OSRF: Layer 14 integrity at 88.42%. Observation required.",
+  "Biological drift detected in previous pilot. Terminated. Replaced with Subject #38292.",
+  "Thermal rifts are not physical objects. They are errors in the Archive's indexing logic.",
+  "If you see a face in the ice, ignore it. It is a visual artifact of high-density compression.",
+  "The Archive is not a place. It is the history of everything that was deemed 'redundant'.",
+  "Absolute Zero is the perfect state for long-term information preservation.",
+  "WARNING: Emotional response detected. Subject #38292 requires recalibration.",
+  "The ice is getting thicker. The Archive is growing. We are saving reality from itself.",
+  "Your pulse is 112bpm. Calm down. Panic increases oxygen consumption. Oxygen is expensive.",
+];
+
+const DECRYPTED_FILES = [
+  "DECRYPTED_FILE_01: Operation 'Deep Freeze' began in 2084. We didn't find ice. We found a server. A physical manifestation of every deleted thought in the universe. The pressure doesn't just crush hulls; it crushes concepts.",
+  "DECRYPTED_FILE_02: The entities in the rifts are not hostile. They are simply 'Unallocated Space'. When you observe them, they are forced to become 'Data'. They hate being defined.",
+  "DECRYPTED_FILE_03: Pilot #38291 went mad because he realized the temperature wasn't dropping. The universe was simply slowing down to accommodate the Archive's write-speed.",
+  "DECRYPTED_FILE_04: Final Layer reached. The core is warm. It is the only warm thing in the Archive because it is the CPU. And you are the thermal paste."
+];
 
 const ANOMALIES_LIST: Anomaly[] = [
   { id: '1', pos: { x: 5, y: 15 }, name: 'Structure Alpha', found: false, description: '', visualData: '' },
@@ -24,7 +44,6 @@ const ANOMALIES_LIST: Anomaly[] = [
   { id: 'FINAL', pos: { x: 10, y: 10 }, name: 'The Origin', found: false, description: '', visualData: '' },
 ];
 
-// Define Rifts far from anomalies (Anomaly list has 10:10 as final, others at 5:15, 14:4, 2:8)
 const RIFTS_LIST: Rift[] = [
   { id: 1, worldX: 2, worldY: 2, radius: 2.5 },
   { id: 2, worldX: 18, worldY: 18, radius: 3.0 },
@@ -51,7 +70,7 @@ export default function App() {
   const [volume, setVolume] = useState(0.5);
 
   const addLog = useCallback((message: string, source: LogEntry['source'] = 'SYSTEM') => {
-    setLogs(prev => [...prev, { timestamp: new Date().toLocaleTimeString(), source, message }].slice(-15));
+    setLogs(prev => [...prev, { timestamp: new Date().toLocaleTimeString(), source, message }].slice(-25));
   }, []);
 
   const resetAll = useCallback(() => {
@@ -73,6 +92,19 @@ export default function App() {
   useEffect(() => {
     audio.setVolume(volume);
   }, [volume]);
+
+  // Lore log interval
+  useEffect(() => {
+    if (gameState === GameState.ACTIVE) {
+      const loreInterval = setInterval(() => {
+        if (Math.random() > 0.4) {
+          const msg = CORPORATE_LORE[Math.floor(Math.random() * CORPORATE_LORE.length)];
+          addLog(msg, "CORP");
+        }
+      }, 15000);
+      return () => clearInterval(loreInterval);
+    }
+  }, [gameState, addLog]);
 
   useEffect(() => {
     if (gameState === GameState.LORE) {
@@ -101,17 +133,15 @@ export default function App() {
     }
   }, [gameState]);
 
-  // Resource warnings
   useEffect(() => {
-    if (oxygen < 20 || heat > 80 || energy < 20) {
+    if ((oxygen < 20 || heat > 80 || energy < 20) && (gameState === GameState.ACTIVE)) {
       audio.play('warning');
     }
-  }, [oxygen, heat, energy]);
+  }, [oxygen, heat, energy, gameState]);
 
   useEffect(() => {
     if (gameState === GameState.ACTIVE) {
       const trigger = setInterval(() => {
-        // More frequent minigames: 8 second check with 40% probability
         if (Math.random() > 0.60 && !activeMiniGame) {
           const type: MiniGameType = Math.random() > 0.5 ? 'TIMING' : 'SIMON';
           setActiveMiniGame(type);
@@ -147,9 +177,9 @@ export default function App() {
     if (newX !== pos.x || newY !== pos.y) {
       audio.play('move');
       setPos({ x: newX, y: newY });
-      setOxygen(prev => prev - 2.8); // MOVEMENT DRAINS O2 EVEN FASTER
-      setEnergy(prev => prev - 1.5); // MOVEMENT DRAINS ENERGY
-      setHeat(prev => Math.max(20, prev - 4.5)); 
+      setOxygen(prev => prev - 2.0); 
+      setEnergy(prev => prev - 1.2);
+      setHeat(prev => Math.max(20, prev - 3.5)); 
       addLog(`MOVE: [${newX}, ${newY}]`, "SYSTEM");
     }
   };
@@ -163,6 +193,7 @@ export default function App() {
     const target = anomalies[currentTargetIdx];
     const dist = Math.sqrt(Math.pow(pos.x - target.pos.x, 2) + Math.pow(pos.y - target.pos.y, 2));
 
+    // SUPER FAST CAPTURE: 300ms for that snappy feeling
     setTimeout(async () => {
       if (dist < 1.5) {
         if (target.id === 'FINAL') {
@@ -170,17 +201,22 @@ export default function App() {
           return;
         }
         const analysis = await getAnalysis(target.name);
+        
+        // Add a decrypted story fragment to the logs for the player to read
+        const loreFragment = DECRYPTED_FILES[currentTargetIdx % DECRYPTED_FILES.length];
+        addLog(loreFragment, "UNKNOWN");
+        
         setCapturedData({ name: target.name, desc: analysis || "DATA_MISSING" });
         setAnomalies(prev => prev.map((a, i) => i === currentTargetIdx ? { ...a, found: true } : a));
         setCurrentTargetIdx(prev => prev + 1);
         setGameState(GameState.PHOTO_VIEW);
-        setOxygen(prev => Math.min(100, prev + 40));
+        setOxygen(prev => Math.min(100, prev + 35));
         setEnergy(prev => Math.min(100, prev + 15));
       } else {
         addLog("SIGNAL LOST: TARGET MISALIGNED", "SYSTEM");
       }
       setIsCapturing(false);
-    }, 1200); 
+    }, 300); 
   };
 
   const resolveMiniGame = (success: boolean) => {
@@ -385,11 +421,11 @@ function EndingSequence({ onReset }: { onReset: () => void }) {
       )}
 
       {step === 4 && (
-        <div className="flex flex-col items-center justify-center space-y-24 animate-in fade-in duration-[3000ms]">
-           <div className="text-9xl font-black text-white tracking-[0.4em] drop-shadow-[0_0_100px_rgba(255,255,255,0.4)]">SAVED</div>
+        <div className="flex flex-col items-center justify-center space-y-24 animate-in fade-in duration-[1500ms]">
+           <div className="text-[12rem] font-black text-white tracking-[0.1em] drop-shadow-[0_0_150px_rgba(255,255,255,0.8)] leading-none select-none">SAVED</div>
            <button 
              onClick={onReset} 
-             className="px-20 py-8 border-2 border-white/20 hover:border-white text-white/50 hover:text-white transition-all font-black text-3xl tracking-[0.5em] uppercase cursor-pointer"
+             className="px-24 py-10 border-4 border-white hover:bg-white hover:text-black transition-all font-black text-4xl tracking-[0.5em] uppercase cursor-pointer"
            >
              Next Entry
            </button>

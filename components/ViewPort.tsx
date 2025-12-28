@@ -69,17 +69,19 @@ export const ViewPort: React.FC<Props> = ({ pos, target, isCapturing, setHeat, s
         }}
       ></div>
 
+      {/* Improved Thermal Rift Indicators */}
       {rifts.map(rift => {
         const rx = 50 + (rift.worldX - pos.x) * SCALE;
         const ry = 50 + (rift.worldY - pos.y) * SCALE;
         const size = rift.radius * SCALE * 2;
         
-        if (rx < -20 || rx > 120 || ry < -20 || ry > 120) return null;
+        // Culling: don't render if too far off screen
+        if (rx < -40 || rx > 140 || ry < -40 || ry > 140) return null;
 
         return (
           <div 
             key={rift.id}
-            className="absolute rounded-full border border-red-900/40 bg-red-900/10 flex flex-col items-center justify-center transition-all duration-500 ease-out"
+            className="absolute rounded-full flex flex-col items-center justify-center transition-all duration-500 ease-out"
             style={{
               left: `${rx}%`,
               top: `${ry}%`,
@@ -88,7 +90,21 @@ export const ViewPort: React.FC<Props> = ({ pos, target, isCapturing, setHeat, s
               transform: 'translate(-50%, -50%)',
             }}
           >
-             <div className="text-[6px] text-red-600 font-bold animate-pulse">THERMAL_ZONE</div>
+             {/* Outer danger ring */}
+             <div className="absolute inset-0 rounded-full border-4 border-red-600/20 animate-pulse" />
+             <div className="absolute inset-2 rounded-full border border-red-500/40 animate-[ping_3s_infinite]" />
+             
+             {/* Inner core haze */}
+             <div className="absolute inset-0 rounded-full bg-red-900/10 backdrop-blur-[1px] shadow-[inset_0_0_30px_rgba(220,38,38,0.2)]" />
+             
+             <div className="z-10 flex flex-col items-center">
+                <div className="text-[7px] text-red-500 font-black tracking-[0.2em] animate-pulse drop-shadow-[0_0_2px_red]">
+                  RIFT_0{rift.id}
+                </div>
+                <div className="text-[5px] text-red-700 font-bold uppercase mt-0.5 opacity-60">
+                  Critical Heat Hazard
+                </div>
+             </div>
           </div>
         );
       })}
@@ -97,6 +113,7 @@ export const ViewPort: React.FC<Props> = ({ pos, target, isCapturing, setHeat, s
         {noise.map((n, i) => <div key={i} className={`border-[0.2px] border-zinc-900 ${n ? 'bg-zinc-800' : ''}`}></div>)}
       </div>
 
+      {/* Target/Anomaly Indicator (Blue - Distinct from Rifts) */}
       <div 
         className="absolute transition-all duration-1000 ease-out pointer-events-none"
         style={{
@@ -118,6 +135,7 @@ export const ViewPort: React.FC<Props> = ({ pos, target, isCapturing, setHeat, s
       </div>
 
       <div className="absolute inset-0 shadow-[inset_0_0_150px_rgba(0,0,0,1)] pointer-events-none"></div>
+      
       {isColliding && (
         <div className="absolute top-1/4 w-full text-center text-red-600 font-black text-[10px] tracking-[0.5em] animate-pulse">
           WARNING: THERMAL INTEGRITY COMPROMISED
@@ -125,8 +143,8 @@ export const ViewPort: React.FC<Props> = ({ pos, target, isCapturing, setHeat, s
       )}
 
       {isCapturing && (
-        <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center z-[90] backdrop-blur-sm">
-          <div className="text-white text-4xl font-black italic tracking-widest animate-pulse uppercase">Compressing Reality...</div>
+        <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center z-[90] backdrop-blur-sm animate-in fade-in duration-75">
+          <div className="text-white text-4xl font-black italic tracking-widest animate-pulse uppercase scale-110 transition-transform">Compressing Reality...</div>
         </div>
       )}
     </div>
